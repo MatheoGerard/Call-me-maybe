@@ -22,7 +22,3 @@ def main() -> None:
         print(word, end="", flush=True)
 
     print("\n")
-
-
-if __name__ == "__main__":
-    main()
