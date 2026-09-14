@@ -1,28 +1,27 @@
-import sys
 from json import JSONDecodeError, load
-from pydantic import ValidationError
-from classes import FunctionDef
-from pydantic import TypeAdapter
+from pydantic import ValidationError, TypeAdapter
+from .classes import FunctionDef, PromptEntry
+from argparse import ArgumentParser, Namespace
 
 
-def find_target_file(args: list[str]) -> str | None:
-    if "--functions_definition" in args:
-        return args[args.index("--functions_definition") + 1]
-    return None
+def find_target_file() -> Namespace:
+    args_parser: ArgumentParser = ArgumentParser()
+    args_parser.add_argument(
+        "--functions_definition",
+        default="data/input/functions_definition.json",
+    )
+    args_parser.add_argument(
+        "--input",
+        default="data/input/function_calling_tests.json",
+    )
+    return args_parser.parse_args()
 
 
 def load_function_definitions(
-    file_target: str | None,
+    file_target: str,
 ) -> list[FunctionDef] | None:
-    target_name: str
-
-    if not file_target:
-        target_name = "data/input/functions_definition.json"
-    else:
-        target_name = file_target
-
     try:
-        with open(target_name, "r") as file:
+        with open(file_target, "r") as file:
             data = load(file)
         adapter: TypeAdapter[list[FunctionDef]] = TypeAdapter(
             list[FunctionDef]
@@ -32,15 +31,37 @@ def load_function_definitions(
         )
         return functions_definitions
     except FileNotFoundError as e:
-        print(f"File {target_name} not found: {e}")
+        print(f"File {file_target} not found: {e}")
     except PermissionError as e:
-        print(f"Not permission to read the file {target_name}: {e}")
+        print(f"Not permission to read the file {file_target}: {e}")
     except JSONDecodeError as e:
-        print(f"File {target_name} is not in json format: {e}")
+        print(f"File {file_target} is not in json format: {e}")
     except ValidationError as e:
-        print(f"File {target_name} is not valide: {e}")
+        print(f"File {file_target} is not valide: {e}")
 
 
-if __name__ == "__main__":
-    file_name: str | None = find_target_file(sys.argv)
-    print(load_function_definitions(file_name))
+def load_prompts(file_target: str) -> list[PromptEntry] | None:
+    try:
+        with open(file_target, "r") as file:
+            data = load(file)
+        adapter: TypeAdapter[list[PromptEntry]] = TypeAdapter(
+            list[PromptEntry]
+        )
+        prompts: list[PromptEntry] = adapter.validate_python(data)
+        return prompts
+    except FileNotFoundError as e:
+        print(f"File {file_target} not found: {e}")
+    except PermissionError as e:
+        print(f"Not permission to read the file {file_target}: {e}")
+    except JSONDecodeError as e:
+        print(f"File {file_target} is not in json format: {e}")
+    except ValidationError as e:
+        print(f"File {file_target} is not valide: {e}")
+
+
+def parsing() -> tuple[list[FunctionDef] | None, list[PromptEntry] | None]:
+    args_parsed: Namespace = find_target_file()
+    return (
+        load_function_definitions(args_parsed.functions_definition),
+        load_prompts(args_parsed.input),
+    )
