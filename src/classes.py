@@ -58,15 +58,32 @@ class PrefixCheck(BaseModel):
                 return True
         return False
 
+    def is_valid(self, char: str) -> bool:
+        return char in self.next_char()
 
-# class StringCheck(BaseModel):
-#   """
-#  Represents a automation to find the next character to add.
-# """
 
-# generated: str = ""
+class StringCheck(BaseModel):
+    """
+    Represents a automation to find the next character to add.
+    """
 
-# def
+    generated: str = ""
+
+    def is_valid(self, char: str) -> bool:
+        if self.generated.count('"') == 0:
+            return char == '"'
+        elif self.generated.count('"') == 1:
+            return True
+        else:
+            return False
+
+    def is_complete(self) -> bool:
+        if self.generated.count('"') == 2:
+            return True
+        return False
+
+    def add_to_generated(self, char: str) -> None:
+        self.generated += char
 
 
 class NumberCheck(BaseModel):
@@ -99,3 +116,9 @@ class NumberCheck(BaseModel):
         if self.generated[-1] == ".":
             return False
         return True
+
+    def is_valid(self, char: str) -> bool:
+        return char in self.next_char()
+
+    def add_to_generated(self, char: str) -> None:
+        self.generated += char
