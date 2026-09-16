@@ -1,8 +1,64 @@
-# from llm_sdk import Small_LLM_Model
-# import numpy as np
-from .classes import FunctionDef, PromptEntry
-from .json_parsing import parsing
-import sys
+from .generator import select_function_name, generate_function
+from .json_parsing import parsing, load_vocab
+import json
+import os
+from llm_sdk import Small_LLM_Model
+
+
+def main() -> None:
+    # 1. Chargement des définitions et des prompts
+    functions_def, prompts = parsing()
+    if not functions_def or not prompts:
+        print("Erreur lors du chargement des fichiers d'entrée.")
+        return
+
+    # 2. Initialisation du LLM SDK et du vocabulaire
+    print("Loading LLM...")
+    llm = Small_LLM_Model()
+    print("LLM ready!")
+    vocab_path = llm.get_path_to_vocab_file()
+    vocab = load_vocab(vocab_path)
+
+    results = []
+
+    # 3. Traitement de chaque prompt
+    for i, entry in enumerate(prompts):
+        prompt_text = entry.prompt
+
+        # Étape A: Sélection forcée du nom de la fonction
+        selected_name = select_function_name(
+            functions_def, llm, vocab, prompt_text
+        )
+
+        # Étape B: Extraction ciblée des paramètres typés
+        func_call = generate_function(
+            selected_name, functions_def, llm, vocab, prompt_text
+        )
+
+        if func_call:
+            result_item = {
+                "prompt": prompt_text,
+                "name": func_call["name"],
+                "parameters": func_call["parameters"],
+            }
+            results.append(result_item)
+            print(f"[{i + 1}/{len(prompts)}] Generated:", result_item)
+
+    # 4. Écriture du fichier JSON de sortie
+    # output_dir = os.path.dirname(output_path)
+    # if output_dir:
+    #   os.makedirs(output_dir, exist_ok=True)
+
+
+#
+#   with open(output_path, "w", encoding="utf-8") as f:
+#      json.dump(results, f, indent=2)
+#
+#   print(f"\nRésultats sauvegardés avec succès dans : {output_path}")
+
+
+if __name__ == "__main__":
+    main()
 
 # def main() -> None:
 #   print("LOAD LLM...")
@@ -24,12 +80,3 @@ import sys
 #      print(word, end="", flush=True)
 #
 #   print("\n")
-
-if __name__ == "__main__":
-    data: tuple[list[FunctionDef] | None, list[PromptEntry] | None] = parsing()
-    if data[0] is None or data[1] is None:
-        sys.exit("Program termination due to a missing input file")
-    for d in data[0]:
-        print(d)
-    for d in data[1]:
-        print(d)

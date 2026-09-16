@@ -65,3 +65,11 @@ def parsing() -> tuple[list[FunctionDef] | None, list[PromptEntry] | None]:
         load_function_definitions(args_parsed.functions_definition),
         load_prompts(args_parsed.input),
     )
+
+
+def load_vocab(vocab_file_path: str) -> dict[int, str]:
+    """Charge le vocabulaire du modèle (ID -> chaîne)."""
+    with open(vocab_file_path, "r", encoding="utf-8") as f:
+        data = load(f)
+    # Reconstitution du mapping ID (int) -> token (str)
+    return {v: k for k, v in data.items()}
