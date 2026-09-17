@@ -6,31 +6,26 @@ from llm_sdk import Small_LLM_Model
 
 
 def main() -> None:
-    # 1. Chargement des définitions et des prompts
     functions_def, prompts = parsing()
     if not functions_def or not prompts:
         print("Erreur lors du chargement des fichiers d'entrée.")
         return
 
-    # 2. Initialisation du LLM SDK et du vocabulaire
-    print("Loading LLM...")
+    print("Loading LLM...", flush=True)
     llm = Small_LLM_Model()
-    print("LLM ready!")
+    print("LLM ready!", flush=True)
     vocab_path = llm.get_path_to_vocab_file()
     vocab = load_vocab(vocab_path)
 
     results = []
 
-    # 3. Traitement de chaque prompt
     for i, entry in enumerate(prompts):
         prompt_text = entry.prompt
 
-        # Étape A: Sélection forcée du nom de la fonction
         selected_name = select_function_name(
             functions_def, llm, vocab, prompt_text
         )
 
-        # Étape B: Extraction ciblée des paramètres typés
         func_call = generate_function(
             selected_name, functions_def, llm, vocab, prompt_text
         )
@@ -42,7 +37,9 @@ def main() -> None:
                 "parameters": func_call["parameters"],
             }
             results.append(result_item)
-            print(f"[{i + 1}/{len(prompts)}] Generated:", result_item)
+            print(
+                f"[{i + 1}/{len(prompts)}] Generated:", result_item, flush=True
+            )
 
     # 4. Écriture du fichier JSON de sortie
     # output_dir = os.path.dirname(output_path)

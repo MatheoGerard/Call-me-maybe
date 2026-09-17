@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Literal
 from string import digits
 
@@ -63,62 +63,58 @@ class PrefixCheck(BaseModel):
 
 
 class StringCheck(BaseModel):
-    """
-    Represents a automation to find the next character to add.
-    """
-
     generated: str = ""
+    target_prompt: str = ""
+    is_done: bool = Field(default=False, exclude=True)
 
     def is_valid(self, char: str) -> bool:
-        if self.generated.count('"') == 0:
-            return char == '"'
-        elif self.generated.count('"') == 1:
+        candidate = self.generated + char
+        cleaned_candidate = candidate.strip(" \"'\n\t")
+        if not cleaned_candidate:
             return True
-        else:
-            return False
-
-    def is_complete(self) -> bool:
-        if self.generated.count('"') == 2:
-            return True
-        return False
+        # Seuls les caractères formant une sous-chaîne du prompt sont valides
+        return cleaned_candidate.lower() in self.target_prompt.lower()
 
     def add_to_generated(self, char: str) -> None:
+        if char in ('"', "'", "\n") and len(self.generated.strip()) > 0:
+            self.is_done = True
+            return
         self.generated += char
+
+    def is_complete(self) -> bool:
+        cleaned = self.generated.strip(" \"'\n\t")
+        if cleaned.lower() in self.target_prompt.lower() and len(cleaned) >= 2:
+            return self.is_done
+        return self.is_done
 
 
 class NumberCheck(BaseModel):
-    """
-    Represents a automation to find the next character to add.
-    """
-
     generated: str = ""
-
-    def clean_digits(self) -> str:
-        return self.generated.lstrip("-")
-
-    def next_char(self) -> set[str]:
-        if not self.generated:
-            return set(digits + "-")
-        elif self.generated == "-":
-            return set(digits)
-        elif self.clean_digits() == "0":
-            return set(".")
-        elif self.generated[-1] == ".":
-            return set(digits)
-        elif "." in self.generated:
-            return set(digits)
-        else:
-            return set(digits + ".")
-
-    def is_complete(self) -> bool:
-        if not self.generated or self.generated == "-":
-            return False
-        if self.generated[-1] == ".":
-            return False
-        return True
+    is_done: bool = Field(default=False, exclude=True)
 
     def is_valid(self, char: str) -> bool:
-        return char in self.next_char()
+        cleaned = self.generated.strip()
+
+        if not cleaned or cleaned == "-":
+            return char in (digits + "- ")
+
+        if "." in cleaned:
+            return char in digits or char in (" ", "\n", ",", ")")
+
+        # Autorise les chiffres ou le séparateur de fin
+        return char in (digits + ". \n,)")
 
     def add_to_generated(self, char: str) -> None:
-        self.generated += char
+        cleaned = self.generated.strip()
+        # On ne passe à True que si on a déjà au moins un chiffre ET qu'on lit un espace/séparateur
+        if len(cleaned) > 0 and char in (" ", "\n", ",", ")"):
+            self.is_done = True
+            return
+        if char not in (" ", "\n", ",", ")"):
+            self.generated += char
+
+    def is_complete(self) -> bool:
+        cleaned = self.generated.strip()
+        if not cleaned or cleaned == "-":
+            return False
+        return self.is_done

@@ -1,3 +1,4 @@
+import re
 import math
 from .classes import (
     FunctionDef,
@@ -24,17 +25,14 @@ def find_function_by_name(
 
 def create_check(
     type_args: TypeSpec,
+    original_prompt: str = "",
 ) -> PrefixCheck | StringCheck | NumberCheck:
-    """
-    Choose the correct check engine for a type in entry
-    """
-
     if type_args.type == "number":
         return NumberCheck()
     elif type_args.type == "boolean":
         return PrefixCheck(possibilities=["true", "false"])
     else:
-        return StringCheck()
+        return StringCheck(target_prompt=original_prompt)
 
 
 def get_next_valid_token(
@@ -43,13 +41,8 @@ def get_next_valid_token(
     vocab: dict[int, str],
     checker,
 ) -> tuple[int, str]:
-    """
-    Récupère les logits du LLM pour la séquence d'input_ids et sélectionne
-    le token valide qui a le logit le plus élevé.
-    """
     logits = llm.get_logits_from_input_ids(input_ids)
 
-    # Si le SDK renvoie une liste 2D (ex: batch_size=1), on prend le premier élément
     if isinstance(logits[0], list):
         logits = logits[0]
 
@@ -57,18 +50,19 @@ def get_next_valid_token(
     best_logit = -math.inf
 
     for token_id, token_str in vocab.items():
-        # Sauvegarde de l'état textuel avant de tester
-        saved_generated = checker.generated
+        clean_token_str = (
+            token_str.replace("Ġ", " ").replace("Ċ", "\n").replace("ĉ", "\t")
+        )
+        # On crée un clone ou un état simulé du checker pour ce token
+        simulated_checker = checker.model_copy(deep=True)
         is_valid = True
 
-        for char in token_str:
-            if not checker.is_valid(char):
+        for char in clean_token_str:
+            if not simulated_checker.is_valid(char):
                 is_valid = False
                 break
-            checker.add_to_generated(char)
-
-        # Restauration de l'état du checker
-        checker.generated = saved_generated
+            # On applique le caractère sur le clone pour mettre à jour son état interne (ex: transition d'automate)
+            simulated_checker.add_to_generated(char)
 
         if is_valid and logits[token_id] > best_logit:
             best_logit = logits[token_id]
@@ -79,7 +73,14 @@ def get_next_valid_token(
             f"Aucun token valide trouvé pour la valeur actuelle '{checker.generated}'"
         )
 
-    return best_token_id, vocab[best_token_id]
+    clean_best = (
+        vocab[best_token_id]
+        .replace("Ġ", " ")
+        .replace("Ċ", "\n")
+        .replace("ĉ", "\t")
+    )
+
+    return best_token_id, clean_best
 
 
 def select_function_name(
@@ -91,7 +92,6 @@ def select_function_name(
     possible_names = [f.name for f in fun_def]
     fn_checker = PrefixCheck(possibilities=possible_names)
 
-    # Prompt structuré pour orienter le LLM vers le nom de la fonction
     selection_prompt = (
         f"Available functions: {possible_names}\n"
         f"User input: {original_prompt}\n"
@@ -111,19 +111,22 @@ def select_function_name(
 
 
 def parse_raw_value(raw_val: str, param_type: str):
-    """Nettoie et typpe la valeur générée par le LLM."""
     cleaned = raw_val.strip()
+
     if param_type == "number":
-        return float(cleaned) if "." in cleaned else int(cleaned)
+        match = re.search(r"-?\d+(?:\.\d+)?", cleaned)
+        if match:
+            val_str = match.group(0)
+            return float(val_str) if "." in val_str else int(val_str)
+        return 0
+
     elif param_type == "boolean":
-        return cleaned.lower() == "true"
+        return cleaned.lower().startswith("true")
+
     else:  # string
-        # Supprime les guillemets éventuels autour de la valeur
-        if (cleaned.startswith('"') and cleaned.endswith('"')) or (
-            cleaned.startswith("'") and cleaned.endswith("'")
-        ):
-            cleaned = cleaned[1:-1]
-        return cleaned
+        # Garde seulement la 1ere ligne et retire guillemets/espaces autour
+        cleaned = cleaned.split("\n")[0]
+        return cleaned.strip(" \"'\t")
 
 
 def generate_function(
@@ -138,25 +141,46 @@ def generate_function(
         return None
 
     parsed_parameters: dict = {}
+    param_list = list(function_find.parameters.items())
 
-    for param_name, param_spec in function_find.parameters.items():
-        # Construction d'un prompt d'extraction ciblé par paramètre
-        extraction_prompt = (
-            f"Context: {original_prompt}\n"
-            f"Function: {name}\n"
-            f"Extract parameter '{param_name}' ({param_spec.type}): "
-        )
-        input_ids = llm.encode(extraction_prompt)[0].tolist()
-
-        checker = create_check(param_spec)
-
-        while not checker.is_complete():
-            token_id, token_str = get_next_valid_token(
-                llm, input_ids, vocab, checker
+    for idx, (param_name, param_spec) in enumerate(param_list):
+        already_extracted = ""
+        if parsed_parameters:
+            already_extracted = (
+                f"Given extracted parameters: {parsed_parameters}\n"
             )
-            input_ids.append(token_id)
+
+        if param_spec.type == "number":
+            ordinal = "first" if idx == 0 else "second"
+            prompt_text = (
+                f"Input text: {original_prompt}\n"
+                f"{already_extracted}"
+                f"Extract the {ordinal} number value for parameter '{param_name}': "
+            )
+        else:
+            prompt_text = (
+                f"Text: {original_prompt}\n"
+                f"{already_extracted}"
+                f"Extract the exact substring for '{param_name}' verbatim from Text.\n"
+                f"Substring: "
+            )
+
+        current_input_ids = llm.encode(prompt_text)[0].tolist()
+        checker = create_check(param_spec, original_prompt)
+
+        steps = 0
+        max_steps = 32
+
+        while not checker.is_complete() and steps < max_steps:
+            token_id, token_str = get_next_valid_token(
+                llm, current_input_ids, vocab, checker
+            )
+            current_input_ids.append(token_id)
+
             for char in token_str:
                 checker.add_to_generated(char)
+
+            steps += 1
 
         parsed_parameters[param_name] = parse_raw_value(
             checker.generated, param_spec.type
