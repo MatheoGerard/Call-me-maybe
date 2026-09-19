@@ -35,12 +35,16 @@ def load_function_definitions(
         return functions_definitions
     except FileNotFoundError as e:
         print(f"File {file_target} not found: {e}")
+        return None
     except PermissionError as e:
         print(f"Not permission to read the file {file_target}: {e}")
+        return None
     except JSONDecodeError as e:
         print(f"File {file_target} is not in json format: {e}")
+        return None
     except ValidationError as e:
         print(f"File {file_target} is not valide: {e}")
+        return None
 
 
 def load_prompts(file_target: str) -> list[PromptEntry] | None:
@@ -70,12 +74,16 @@ def load_prompts(file_target: str) -> list[PromptEntry] | None:
         return prompts
     except FileNotFoundError as e:
         print(f"File {file_target} not found: {e}")
+        return None
     except PermissionError as e:
         print(f"Not permission to read the file {file_target}: {e}")
+        return None
     except JSONDecodeError as e:
         print(f"File {file_target} is not in json format: {e}")
+        return None
     except ValidationError as e:
         print(f"File {file_target} is not valide: {e}")
+        return None
 
 
 def load_vocab(vocab_file_path: str) -> dict[int, str]:

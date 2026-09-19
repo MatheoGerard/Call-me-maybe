@@ -1,7 +1,7 @@
 from .generator import select_function_name, generate_function, dump_result
 from .parser import parsing
 from .json_parsing import load_vocab
-from llm_sdk import Small_LLM_Model
+from llm_sdk import Small_LLM_Model  # type: ignore[attr-defined]
 
 
 def main() -> None:

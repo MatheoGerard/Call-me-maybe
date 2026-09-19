@@ -1,3 +1,4 @@
+from llm_sdk import Small_LLM_Model  # type: ignore[attr-defined]
 import os
 from json import dump
 import re
@@ -44,10 +45,10 @@ def create_check(
 
 
 def get_next_valid_token(
-    llm,
+    llm: Small_LLM_Model,
     input_ids: list[int],
     vocab: dict[int, str],
-    checker,
+    checker: NumberCheck | StringCheck | PrefixCheck | FreeTextCheck,
 ) -> tuple[int, str]:
     logits = llm.get_logits_from_input_ids(input_ids)
 
@@ -92,12 +93,12 @@ def get_next_valid_token(
 
 def select_function_name(
     fun_def: list[FunctionDef],
-    llm,
+    llm: Small_LLM_Model,
     vocab: dict[int, str],
     original_prompt: str,
 ) -> str:
     possible_names = [f.name for f in fun_def]
-    fn_checker = PrefixCheck(possibilities=possible_names)
+    fn_checker: PrefixCheck = PrefixCheck(possibilities=possible_names)
 
     selection_prompt = (
         f"Available functions: {possible_names}\n"
@@ -114,10 +115,10 @@ def select_function_name(
         for char in token_str:
             fn_checker.add_to_generated(char)
 
-    return fn_checker.generated
+    return str(fn_checker.generated)
 
 
-def parse_raw_value(raw_val: str, param_type: str):
+def parse_raw_value(raw_val: str, param_type: str) -> str | float | int:
     cleaned = raw_val.strip(" \"'\n\t")
 
     if param_type == "number":
@@ -137,7 +138,7 @@ def parse_raw_value(raw_val: str, param_type: str):
 def generate_function(
     func_name: str,
     fun_def: list[FunctionDef],
-    llm,
+    llm: Small_LLM_Model,
     vocab: dict[int, str],
     original_prompt: str,
 ) -> dict | None:
@@ -145,7 +146,7 @@ def generate_function(
     if not target_func:
         return None
 
-    parsed_parameters = {}
+    parsed_parameters: dict[str, str | float | int] = {}
     param_list = list(target_func.parameters.items())
 
     for idx, (param_name, param_spec) in enumerate(param_list):
