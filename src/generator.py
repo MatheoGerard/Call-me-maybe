@@ -1,12 +1,30 @@
+import os
+from json import dump
 import re
 import math
-from .classes import (
-    FunctionDef,
+from .state_machines import (
     NumberCheck,
     PrefixCheck,
     StringCheck,
-    TypeSpec,
+    FreeTextCheck,
 )
+from .parser_classes import FunctionDef, TypeSpec
+
+
+def dump_result(res: list[dict], output_name: str) -> None:
+    try:
+        os.makedirs(os.path.dirname(output_name), exist_ok=True)
+
+        with open(output_name, "w", encoding="utf-8") as file:
+            dump(res, file, indent=2, ensure_ascii=False)
+
+        print(f"✅ Résultats sauvegardés avec succès dans : {output_name}")
+    except PermissionError as e:
+        print(
+            f"Erreur de permission lors de l'écriture dans {output_name}: {e}"
+        )
+    except Exception as e:
+        print(f"Une erreur est survenue lors de la sauvegarde : {e}")
 
 
 def find_function_by_name(
@@ -24,13 +42,16 @@ def find_function_by_name(
 
 
 def create_check(
+    param_name: str,
     type_args: TypeSpec,
     original_prompt: str = "",
-) -> PrefixCheck | StringCheck | NumberCheck:
+) -> PrefixCheck | StringCheck | NumberCheck | FreeTextCheck:
     if type_args.type == "number":
         return NumberCheck()
     elif type_args.type == "boolean":
         return PrefixCheck(possibilities=["true", "false"])
+    elif "regex" in param_name or "replace" in param_name:
+        return FreeTextCheck()
     else:
         return StringCheck(target_prompt=original_prompt)
 
@@ -53,7 +74,6 @@ def get_next_valid_token(
         clean_token_str = (
             token_str.replace("Ġ", " ").replace("Ċ", "\n").replace("ĉ", "\t")
         )
-        # On crée un clone ou un état simulé du checker pour ce token
         simulated_checker = checker.model_copy(deep=True)
         is_valid = True
 
@@ -61,7 +81,6 @@ def get_next_valid_token(
             if not simulated_checker.is_valid(char):
                 is_valid = False
                 break
-            # On applique le caractère sur le clone pour mettre à jour son état interne (ex: transition d'automate)
             simulated_checker.add_to_generated(char)
 
         if is_valid and logits[token_id] > best_logit:
@@ -111,7 +130,7 @@ def select_function_name(
 
 
 def parse_raw_value(raw_val: str, param_type: str):
-    cleaned = raw_val.strip()
+    cleaned = raw_val.strip(" \"'\n\t")
 
     if param_type == "number":
         match = re.search(r"-?\d+(?:\.\d+)?", cleaned)
@@ -123,50 +142,86 @@ def parse_raw_value(raw_val: str, param_type: str):
     elif param_type == "boolean":
         return cleaned.lower().startswith("true")
 
-    else:  # string
-        # Garde seulement la 1ere ligne et retire guillemets/espaces autour
-        cleaned = cleaned.split("\n")[0]
-        return cleaned.strip(" \"'\t")
+    else:
+        return cleaned
 
 
 def generate_function(
-    name: str,
+    func_name: str,
     fun_def: list[FunctionDef],
     llm,
     vocab: dict[int, str],
     original_prompt: str,
 ) -> dict | None:
-    function_find = next((f for f in fun_def if f.name == name), None)
-    if not function_find:
+    target_func = next((f for f in fun_def if f.name == func_name), None)
+    if not target_func:
         return None
 
-    parsed_parameters: dict = {}
-    param_list = list(function_find.parameters.items())
+    parsed_parameters = {}
+    param_list = list(target_func.parameters.items())
 
     for idx, (param_name, param_spec) in enumerate(param_list):
         already_extracted = ""
         if parsed_parameters:
-            already_extracted = (
-                f"Given extracted parameters: {parsed_parameters}\n"
-            )
+            already_extracted = f"Extracted so far: {parsed_parameters}\n"
 
-        if param_spec.type == "number":
+        if param_spec.type == "number" or param_spec.type == "integer":
             ordinal = "first" if idx == 0 else "second"
             prompt_text = (
-                f"Input text: {original_prompt}\n"
+                f"Examples:\n"
+                f"Text: Compute square root of 144 -> Result: 144\n"
+                f"Text: Add 10 and 20 -> Result: 10\n\n"
+                f"Text: {original_prompt}\n"
                 f"{already_extracted}"
-                f"Extract the {ordinal} number value for parameter '{param_name}': "
+                f"Task: Copy the {ordinal} raw number for '{param_name}' directly from Text. DO NOT compute or solve any math expression.\n"
+                f"Result: "
             )
-        else:
+
+        elif "source" in param_name:
             prompt_text = (
                 f"Text: {original_prompt}\n"
                 f"{already_extracted}"
-                f"Extract the exact substring for '{param_name}' verbatim from Text.\n"
-                f"Substring: "
+                f"Task: Copy the full text argument inside quotes or the complete sentence for '{param_name}'.\n"
+                f"Result: "
+            )
+
+        elif "regex" in param_name:
+            prompt_text = (
+                f"Examples:\n"
+                f"Text: Replace all numbers with X -> Pattern: \\d+\n"
+                f"Text: Replace all vowels with * -> Pattern: [aeiouAEIOU]\n"
+                f"Text: Substitute 'cat' with 'dog' -> Pattern: cat\n\n"
+                f"Text: {original_prompt}\n"
+                f"{already_extracted}"
+                f"Task: Write ONLY the regex pattern or target word to match for '{param_name}'.\n"
+                f"Pattern: "
+            )
+
+        elif "replace" in param_name:
+            prompt_text = (
+                f"Examples:\n"
+                f"Text: Replace all numbers with NUMBERS -> Replacement: NUMBERS\n"
+                f"Text: Replace all vowels with asterisks -> Replacement: *\n"
+                f"Text: Substitute 'cat' with 'dog' -> Replacement: dog\n\n"
+                f"Text: {original_prompt}\n"
+                f"{already_extracted}"
+                f"Task: Write ONLY the replacement value for '{param_name}'.\n"
+                f"Replacement: "
+            )
+
+        else:
+            prompt_text = (
+                f"Examples:\n"
+                f"Text: Greet john -> Output: john\n"
+                f"Text: Reverse the string 'hello' -> Output: hello\n\n"
+                f"Text: {original_prompt}\n"
+                f"{already_extracted}"
+                f"Task: Extract ONLY the target entity/value for '{param_name}' (exclude verbs like Greet, Reverse).\n"
+                f"Output: "
             )
 
         current_input_ids = llm.encode(prompt_text)[0].tolist()
-        checker = create_check(param_spec, original_prompt)
+        checker = create_check(param_name, param_spec, original_prompt)
 
         steps = 0
         max_steps = 32
@@ -187,6 +242,6 @@ def generate_function(
         )
 
     return {
-        "name": function_find.name,
+        "name": func_name,
         "parameters": parsed_parameters,
     }

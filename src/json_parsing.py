@@ -1,25 +1,28 @@
 from json import JSONDecodeError, load
 from pydantic import ValidationError, TypeAdapter
-from .classes import FunctionDef, PromptEntry
-from argparse import ArgumentParser, Namespace
-
-
-def find_target_file() -> Namespace:
-    args_parser: ArgumentParser = ArgumentParser()
-    args_parser.add_argument(
-        "--functions_definition",
-        default="data/input/functions_definition.json",
-    )
-    args_parser.add_argument(
-        "--input",
-        default="data/input/function_calling_tests.json",
-    )
-    return args_parser.parse_args()
+from .parser_classes import FunctionDef, PromptEntry
 
 
 def load_function_definitions(
     file_target: str,
 ) -> list[FunctionDef] | None:
+    """
+    Load and validate the function definitions from a JSON file.
+
+    Reads the JSON file at the given path and validates its content as
+    a list of FunctionDef. Errors are not raised: a message describing
+    the problem is printed and None is returned.
+
+    Args:
+        file_target: Path to the JSON file containing the function
+            definitions.
+
+    Returns:
+        The list of validated FunctionDef, or None if the file is not
+        found, cannot be read, is not valid JSON, or does not match the
+        expected structure.
+    """
+
     try:
         with open(file_target, "r") as file:
             data = load(file)
@@ -41,6 +44,22 @@ def load_function_definitions(
 
 
 def load_prompts(file_target: str) -> list[PromptEntry] | None:
+    """
+    Load and validate the prompts from a JSON file.
+
+    Reads the JSON file at the given path and validates its content as
+    a list of PromptEntry. Errors are not raised: a message describing
+    the problem is printed and None is returned.
+
+    Args:
+        file_target: Path to the JSON file containing the prompts.
+
+    Returns:
+        The list of validated PromptEntry, or None if the file is not
+        found, cannot be read, is not valid JSON, or does not match the
+        expected structure.
+    """
+
     try:
         with open(file_target, "r") as file:
             data = load(file)
@@ -59,17 +78,30 @@ def load_prompts(file_target: str) -> list[PromptEntry] | None:
         print(f"File {file_target} is not valide: {e}")
 
 
-def parsing() -> tuple[list[FunctionDef] | None, list[PromptEntry] | None]:
-    args_parsed: Namespace = find_target_file()
-    return (
-        load_function_definitions(args_parsed.functions_definition),
-        load_prompts(args_parsed.input),
-    )
-
-
 def load_vocab(vocab_file_path: str) -> dict[int, str]:
-    """Charge le vocabulaire du modèle (ID -> chaîne)."""
+    """
+    Load a vocabulary file and invert it into an id-to-token mapping.
+
+    Reads a JSON file that maps each token string to its integer id,
+    and returns the reverse mapping, so that a token can be found from
+    its id.
+
+    Args:
+        vocab_file_path: Path to the JSON vocabulary file, encoded in
+            UTF-8. It must contain an object mapping token strings to
+            integer ids.
+
+    Returns:
+        A dictionary mapping each token id to its token string. If two
+        tokens share the same id, only the last one read is kept.
+
+    Raises:
+        FileNotFoundError: If the file does not exist.
+        PermissionError: If the file cannot be read.
+        json.JSONDecodeError: If the file is not valid JSON.
+        AttributeError: If the JSON content is not an object.
+    """
+
     with open(vocab_file_path, "r", encoding="utf-8") as f:
         data = load(f)
-    # Reconstitution du mapping ID (int) -> token (str)
     return {v: k for k, v in data.items()}
