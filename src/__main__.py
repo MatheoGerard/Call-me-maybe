@@ -6,6 +6,7 @@ from llm_sdk import Small_LLM_Model
 
 def main() -> None:
     functions_def, prompts, output_name = parsing()
+
     if not functions_def or not prompts:
         print("Erreur lors du chargement des fichiers d'entrée.")
         return
@@ -13,6 +14,7 @@ def main() -> None:
     print("Loading LLM...", flush=True)
     llm = Small_LLM_Model()
     print("LLM ready!", flush=True)
+
     vocab_path = llm.get_path_to_vocab_file()
     vocab = load_vocab(vocab_path)
 

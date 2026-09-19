@@ -9,6 +9,7 @@ from .state_machines import (
     FreeTextCheck,
 )
 from .parser_classes import FunctionDef, TypeSpec
+from .prompt_engineering import find_true_prompt
 
 
 def dump_result(res: list[dict], output_name: str) -> None:
@@ -25,20 +26,6 @@ def dump_result(res: list[dict], output_name: str) -> None:
         )
     except Exception as e:
         print(f"Une erreur est survenue lors de la sauvegarde : {e}")
-
-
-def find_function_by_name(
-    name: str, fun_def: list[FunctionDef]
-) -> None | FunctionDef:
-    """
-    Searches a list of function definitions for the one matching the
-    given name, returning None if no match is found.
-    """
-
-    for function in fun_def:
-        if function.name == name:
-            return function
-    return None
 
 
 def create_check(
@@ -165,60 +152,9 @@ def generate_function(
         if parsed_parameters:
             already_extracted = f"Extracted so far: {parsed_parameters}\n"
 
-        if param_spec.type == "number" or param_spec.type == "integer":
-            ordinal = "first" if idx == 0 else "second"
-            prompt_text = (
-                f"Examples:\n"
-                f"Text: Compute square root of 144 -> Result: 144\n"
-                f"Text: Add 10 and 20 -> Result: 10\n\n"
-                f"Text: {original_prompt}\n"
-                f"{already_extracted}"
-                f"Task: Copy the {ordinal} raw number for '{param_name}' directly from Text. DO NOT compute or solve any math expression.\n"
-                f"Result: "
-            )
-
-        elif "source" in param_name:
-            prompt_text = (
-                f"Text: {original_prompt}\n"
-                f"{already_extracted}"
-                f"Task: Copy the full text argument inside quotes or the complete sentence for '{param_name}'.\n"
-                f"Result: "
-            )
-
-        elif "regex" in param_name:
-            prompt_text = (
-                f"Examples:\n"
-                f"Text: Replace all numbers with X -> Pattern: \\d+\n"
-                f"Text: Replace all vowels with * -> Pattern: [aeiouAEIOU]\n"
-                f"Text: Substitute 'cat' with 'dog' -> Pattern: cat\n\n"
-                f"Text: {original_prompt}\n"
-                f"{already_extracted}"
-                f"Task: Write ONLY the regex pattern or target word to match for '{param_name}'.\n"
-                f"Pattern: "
-            )
-
-        elif "replace" in param_name:
-            prompt_text = (
-                f"Examples:\n"
-                f"Text: Replace all numbers with NUMBERS -> Replacement: NUMBERS\n"
-                f"Text: Replace all vowels with asterisks -> Replacement: *\n"
-                f"Text: Substitute 'cat' with 'dog' -> Replacement: dog\n\n"
-                f"Text: {original_prompt}\n"
-                f"{already_extracted}"
-                f"Task: Write ONLY the replacement value for '{param_name}'.\n"
-                f"Replacement: "
-            )
-
-        else:
-            prompt_text = (
-                f"Examples:\n"
-                f"Text: Greet john -> Output: john\n"
-                f"Text: Reverse the string 'hello' -> Output: hello\n\n"
-                f"Text: {original_prompt}\n"
-                f"{already_extracted}"
-                f"Task: Extract ONLY the target entity/value for '{param_name}' (exclude verbs like Greet, Reverse).\n"
-                f"Output: "
-            )
+        prompt_text = find_true_prompt(
+            original_prompt, already_extracted, param_name, param_spec, idx
+        )
 
         current_input_ids = llm.encode(prompt_text)[0].tolist()
         checker = create_check(param_name, param_spec, original_prompt)
