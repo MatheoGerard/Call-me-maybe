@@ -76,7 +76,8 @@ def get_next_valid_token(
 
     if best_token_id == -1:
         raise RuntimeError(
-            f"Aucun token valide trouvé pour la valeur actuelle '{checker.generated}'"
+            "Aucun token valide trouvé pour la valeur actuelle"
+            f" '{checker.generated}'"
         )
 
     clean_best = (
