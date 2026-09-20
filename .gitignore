@@ -1,6 +1,4 @@
 # Python-generated files
-data
-llm_sdk
 __pycache__/
 *.py[oc]
 build/
