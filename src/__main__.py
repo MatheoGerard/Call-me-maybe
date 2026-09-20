@@ -5,6 +5,25 @@ from llm_sdk import Small_LLM_Model  # type: ignore[attr-defined]
 
 
 def main() -> None:
+    """
+    Run the function-calling pipeline on all the input prompts.
+
+    Loads the function definitions and the prompts from the files given
+    on the command line, then loads the model and its vocabulary. For
+    each prompt, selects the matching function, generates its
+    arguments, and prints the result. Once all prompts are processed,
+    the results are written to the output file. If an input file could
+    not be loaded, an error message is printed and the function returns
+    without doing anything else.
+
+    Each entry written to the output file is a dictionary with three
+    keys: "prompt", "name" and "parameters".
+
+    Raises:
+        RuntimeError: If no token of the vocabulary is accepted by a
+            checker during generation (raised by get_next_valid_token).
+    """
+
     functions_def, prompts, output_name = parsing()
 
     if not functions_def or not prompts:

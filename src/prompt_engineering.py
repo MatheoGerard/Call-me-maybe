@@ -8,6 +8,37 @@ def find_true_prompt(
     param_spec: TypeSpec,
     idx: int,
 ) -> str:
+    """
+    Build the prompt used to extract the value of one parameter.
+
+    Selects a few-shot prompt template according to the type and the
+    name of the parameter. The first matching case is used:
+    - "number" or "integer" type: asks to copy the idx-th raw number
+      from the text, without computing anything.
+    - name containing "source": asks to copy the full text argument.
+    - name containing "regex": asks for the regex pattern or the word
+      to match.
+    - name containing "replace": asks for the replacement value.
+    - any other case: asks for the target entity or value, excluding
+      action verbs.
+
+    Args:
+        original_prompt: Natural-language request from which the value
+            is extracted.
+        already_extracted: Line describing the values already extracted
+            for the previous parameters, ending with a newline. Empty
+            string if there are none.
+        param_name: Name of the parameter to extract.
+        param_spec: Type specification of the parameter.
+        idx: Position of the parameter in the function's parameter
+            list. Only used to choose between "first" and "second" for
+            numeric parameters.
+
+    Returns:
+        The prompt to give to the model, ending with the label that the
+        generated value should follow.
+    """
+
     if param_spec.type == "number" or param_spec.type == "integer":
         ordinal = "first" if idx == 0 else "second"
         return (

@@ -14,6 +14,21 @@ from .prompt_engineering import find_true_prompt
 
 
 def dump_result(res: list[dict], output_name: str) -> None:
+    """
+    Write the results to a JSON file.
+
+    Creates the parent directories of the output path if they do not
+    exist, then writes the results as indented JSON, encoded in UTF-8
+    with non-ASCII characters kept as is. Errors are not raised: a
+    message describing the problem is printed instead.
+
+    Args:
+        res: List of result dictionaries to write. Must be
+            JSON-serializable.
+        output_name: Path of the output JSON file. An existing file is
+            overwritten.
+    """
+
     try:
         os.makedirs(os.path.dirname(output_name), exist_ok=True)
 
@@ -32,7 +47,30 @@ def create_check(
     type_args: TypeSpec,
     original_prompt: str = "",
 ) -> PrefixCheck | StringCheck | NumberCheck | FreeTextCheck:
-    if type_args.type == "number":
+    """
+    Create the checker matching a function parameter.
+
+    Selects the checker used to constrain the generation of the value
+    of a parameter, according to its type and its name:
+    - "number" type: NumberCheck.
+    - "boolean" type: PrefixCheck restricted to "true" and "false".
+    - name containing "regex" or "replace": FreeTextCheck, since the
+      value is not necessarily found in the prompt.
+    - any other case: StringCheck, which constrains the value to be
+      found in the original prompt.
+
+    Args:
+        param_name: Name of the parameter. Only checked for the
+            substrings "regex" and "replace".
+        type_args: Type specification of the parameter.
+        original_prompt: Prompt from which the value must be extracted.
+            Only used by StringCheck. Defaults to an empty string.
+
+    Returns:
+        A new checker instance suited to the parameter.
+    """
+
+    if type_args.type == "number" or type_args.type == "integer":
         return NumberCheck()
     elif type_args.type == "boolean":
         return PrefixCheck(possibilities=["true", "false"])
@@ -48,6 +86,34 @@ def get_next_valid_token(
     vocab: dict[int, str],
     checker: NumberCheck | StringCheck | PrefixCheck | FreeTextCheck,
 ) -> tuple[int, str]:
+    """
+    Select the most likely token that satisfies the checker.
+
+    Gets the logits for the next token from the model, then goes
+    through the whole vocabulary. Each token is decoded (byte-level BPE
+    markers are replaced by their real characters) and tested
+    character by character on a copy of the checker. Among the tokens
+    accepted by the checker, the one with the highest logit is
+    returned. The checker passed as argument is not modified.
+
+    Args:
+        llm: Model used to compute the logits of the next token.
+        input_ids: Ids of the tokens generated so far, used as context.
+        vocab: Mapping from each token id to its token string.
+        checker: Checker constraining the value being generated. Each
+            candidate token is simulated on a deep copy of it.
+
+    Returns:
+        A tuple of two elements:
+        - The id of the best valid token.
+        - Its decoded string, where "Ġ" is replaced by a space, "Ċ" by
+          a newline and "ĉ" by a tab.
+
+    Raises:
+        RuntimeError: If no token of the vocabulary is accepted by the
+            checker.
+    """
+
     logits = llm.get_logits_from_input_ids(input_ids)
 
     if isinstance(logits[0], list):
@@ -95,6 +161,32 @@ def select_function_name(
     vocab: dict[int, str],
     original_prompt: str,
 ) -> str:
+    """
+    Choose the function matching a prompt, token by token.
+
+    Builds a selection prompt listing the available function names and
+    the user input, then generates the function name with the model.
+    Generation is constrained by a PrefixCheck so that the result is
+    always exactly one of the available names. Tokens are added until
+    the generated text is a complete name.
+
+    Args:
+        fun_def: Definitions of the available functions. Only their
+            names are used.
+        llm: Model used to generate the name.
+        vocab: Mapping from each token id to its token string.
+        original_prompt: Natural-language request from which the
+            function must be selected.
+
+    Returns:
+        The name of the selected function, guaranteed to be one of the
+        names in fun_def.
+
+    Raises:
+        RuntimeError: If no token of the vocabulary is accepted by the
+            checker (raised by get_next_valid_token).
+    """
+
     possible_names = [f.name for f in fun_def]
     fn_checker: PrefixCheck = PrefixCheck(possibilities=possible_names)
 
@@ -117,9 +209,31 @@ def select_function_name(
 
 
 def parse_raw_value(raw_val: str, param_type: str) -> str | float | int:
+    """
+    Convert a raw generated string into a value of the expected type.
+
+    Strips surrounding spaces, quotes, newlines and tabs, then converts
+    the result according to the parameter type:
+    - "number": the first number found in the text, as an int if it has
+      no decimal point, or a float otherwise. Returns 0 if no number
+      is found.
+    - "boolean": True if the text starts with "true" (case-insensitive),
+      False otherwise.
+    - any other type: the cleaned string.
+
+    Args:
+        raw_val: Raw text generated for the parameter.
+        param_type: Type name of the parameter, as given by
+            TypeSpec.type.
+
+    Returns:
+        The converted value: an int or a float for "number", a bool for
+        "boolean", or a str for any other type.
+    """
+
     cleaned = raw_val.strip(" \"'\n\t")
 
-    if param_type == "number":
+    if param_type == "number" or param_type == "integer":
         match = re.search(r"-?\d+(?:\.\d+)?", cleaned)
         if match:
             val_str = match.group(0)
@@ -140,6 +254,37 @@ def generate_function(
     vocab: dict[int, str],
     original_prompt: str,
 ) -> dict | None:
+    """
+    Generate the arguments of a function call from a prompt.
+
+    Looks up the definition of the function, then generates the value
+    of each of its parameters in order. For each parameter, a prompt is
+    built (including the values already extracted), a checker suited to
+    the parameter is created, and tokens are generated one by one until
+    the checker is complete or the step limit is reached. The raw text
+    is then converted to the expected type.
+
+    Args:
+        func_name: Name of the function to call.
+        fun_def: Definitions of the available functions, in which
+            func_name is looked up.
+        llm: Model used to generate the values.
+        vocab: Mapping from each token id to its token string.
+        original_prompt: Natural-language request from which the
+            arguments are extracted.
+
+    Returns:
+        A dictionary with two keys:
+        - "name": The name of the function.
+        - "parameters": A dictionary mapping each parameter name to its
+          generated value.
+        Returns None if func_name is not found in fun_def.
+
+    Raises:
+        RuntimeError: If no token of the vocabulary is accepted by the
+            checker (raised by get_next_valid_token).
+    """
+
     target_func = next((f for f in fun_def if f.name == func_name), None)
     if not target_func:
         return None
