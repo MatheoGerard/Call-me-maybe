@@ -1,6 +1,6 @@
-FUNC_DEF = data/input/functions_definition.json
-INPUT    = data/input/function_calling_tests.json
-OUTPUT   = data/output/function_calls.json
+FUNC_DEF ?= data/input/functions_definition.json
+INPUT    ?= data/input/function_calling_tests.json
+OUTPUT   ?= data/output/function_calls.json
 
 install:
 	uv sync
@@ -26,9 +26,5 @@ clean:
 lint:
 	-uv run flake8 . --exclude=.venv,llm_sdk
 	uv run mypy . --exclude "(.venv|sdk)" --warn-return-any --warn-unused-ignores --ignore-missing-imports --disallow-untyped-defs --check-untyped-defs
-
-lint-strict:
-	uv run flake8 .
-	uv run mypy . --strict
 
 .PHONY: install run debug clean lint lint-strict

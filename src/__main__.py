@@ -8,7 +8,7 @@ def main() -> None:
     functions_def, prompts, output_name = parsing()
 
     if not functions_def or not prompts:
-        print("Erreur lors du chargement des fichiers d'entrée.")
+        print("Error loading input files.")
         return
 
     print("Loading LLM...", flush=True)

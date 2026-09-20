@@ -20,13 +20,11 @@ def dump_result(res: list[dict], output_name: str) -> None:
         with open(output_name, "w", encoding="utf-8") as file:
             dump(res, file, indent=2, ensure_ascii=False)
 
-        print(f"✅ Résultats sauvegardés avec succès dans : {output_name}")
+        print(f"Results successfully saved in: {output_name}")
     except PermissionError as e:
-        print(
-            f"Erreur de permission lors de l'écriture dans {output_name}: {e}"
-        )
+        print(f"Permission error while writing to {output_name}: {e}")
     except Exception as e:
-        print(f"Une erreur est survenue lors de la sauvegarde : {e}")
+        print(f"An error occurred while saving: {e}")
 
 
 def create_check(
@@ -77,7 +75,7 @@ def get_next_valid_token(
 
     if best_token_id == -1:
         raise RuntimeError(
-            "Aucun token valide trouvé pour la valeur actuelle"
+            "No valid token found for the current value:"
             f" '{checker.generated}'"
         )
 
